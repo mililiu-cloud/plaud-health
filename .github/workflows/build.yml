@@ -1,0 +1,41 @@
+# 健康度看板：重新生成网页（模拟数据）并发布到 GitHub Pages
+# 只手动运行（没有定时）。需要仓库 Secret：HEALTH_PAGE_PASSWORD（网页访问口令）
+name: 健康度看板刷新
+on:
+  workflow_dispatch:
+    inputs:
+      asof:
+        description: '数据截至日 YYYY-MM-DD（留空 = 北京时间昨天）'
+        required: false
+        default: ''
+      dry:
+        description: 'true = 只生成不发布（试跑）'
+        required: false
+        default: 'true'
+permissions:
+  contents: write
+concurrency: { group: build, cancel-in-progress: false }
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install --quiet cryptography
+      - name: 生成
+        env:
+          HEALTH_PAGE_PASSWORD: ${{ secrets.HEALTH_PAGE_PASSWORD }}
+          ASOF: ${{ inputs.asof }}
+        run: |
+          [ -n "$HEALTH_PAGE_PASSWORD" ] || { echo "::error::缺少 Secret HEALTH_PAGE_PASSWORD（网页口令）"; exit 1; }
+          python3 tools/build.py ${ASOF:+--asof "$ASOF"}
+      - name: 发布
+        if: inputs.dry != 'true'
+        run: |
+          git config user.name "Mili"
+          git config user.email "mili.liu@plaud.ai"
+          git add index.html data/health_data.json
+          git diff --cached --quiet && { echo "没有变化"; exit 0; }
+          git commit -m "刷新健康度看板（模拟数据）"
+          git pull --rebase origin main
+          git push origin HEAD:main
